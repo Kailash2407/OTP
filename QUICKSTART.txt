@@ -1,0 +1,222 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║            🚀 MOTOR DASHBOARD - AWS IoT Backend Implementation ✅             ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+═══════════════════════════════════════════════════════════════════════════════
+📦 WHAT WAS CREATED
+═══════════════════════════════════════════════════════════════════════════════
+
+✅ Backend Files:
+   └─ server.js              Node.js backend (Express + Socket.IO + AWS IoT)
+   └─ package.json           Dependencies (express, socket.io, aws-iot-device-sdk)
+
+✅ Frontend Integration:
+   └─ motor-dashboard/index.html    Updated with Socket.IO (layout unchanged)
+
+✅ Documentation:
+   └─ README.md              Complete technical documentation
+   └─ SETUP.md               Step-by-step setup guide
+   └─ IMPLEMENTATION.md      Implementation overview
+   └─ NPM-COMMANDS.md        npm commands reference
+
+✅ Configuration:
+   └─ .gitignore             Security (excludes certificates from Git)
+   └─ setup.sh               Auto-setup script (Linux/macOS)
+   └─ setup.bat              Auto-setup script (Windows)
+
+═══════════════════════════════════════════════════════════════════════════════
+⏱️  QUICK START (5 MINUTES)
+═══════════════════════════════════════════════════════════════════════════════
+
+STEP 1: Install Dependencies
+   ➜ Open command prompt in: d:\motor-dashboard\
+   ➜ Run: npm install
+   ⏱️  Takes about 2 minutes
+
+STEP 2: Add AWS IoT Certificates
+   ➜ Copy these 3 files to d:\motor-dashboard\ (root directory):
+      • private.key
+      • certificate.pem.crt
+      • AmazonRootCA1.pem
+   ⏱️  Takes 30 seconds
+
+STEP 3: Start the Server
+   ➜ Run: npm start
+   ➜ Or double-click: setup.bat (Windows automatic setup)
+   ⏱️  Takes 10 seconds
+
+STEP 4: Open Dashboard
+   ➜ Open browser and go to: http://localhost:3000
+   ➜ You should see the motor dashboard!
+   ⏱️  instant
+
+STEP 5: Test with MQTT Data
+   ➜ Publish this JSON to topic "vehicle/motor/data":
+      {
+        "speed": 2500,
+        "current": 12.5,
+        "voltage": 48.0,
+        "temperature": 65.5
+      }
+   ➜ Dashboard updates in real-time! ✨
+
+═══════════════════════════════════════════════════════════════════════════════
+🎯 KEY FEATURES
+═══════════════════════════════════════════════════════════════════════════════
+
+✅ Real-time Metrics:
+   • Speed (RPM) with progress bar (Cyan)
+   • Current (Amperes) with progress bar (Green)
+   • Voltage (Volts) with progress bar (Purple)
+   • Temperature (Celsius) with progress bar (Amber)
+
+✅ Live Charts:
+   • Speed vs Time (3 time-series graphs)
+   • Temperature vs Time
+   • Voltage vs Time
+   • 40-point rolling window
+
+✅ 3D Motor Visualization:
+   • Rotates based on RPM
+   • Synced real-time rotation
+
+✅ Alerts & Warnings:
+   • Overload alert (Current > 15A)
+   • Temperature alert (Temp > 80°C)
+   • Visual pulse animation on cards
+
+✅ Connection Status:
+   • Live/Offline indicator
+   • Last update timestamp
+   • AWS IoT connection status
+
+═══════════════════════════════════════════════════════════════════════════════
+🏗️  ARCHITECTURE
+═══════════════════════════════════════════════════════════════════════════════
+
+AWS IoT Core (MQTT)
+       ↓ (TLS with certificates)
+  server.js (Node.js)
+       ↓ (Socket.IO events)
+motor-dashboard/index.html (Browser)
+
+═══════════════════════════════════════════════════════════════════════════════
+📋 EXPECTED MQTT MESSAGE FORMAT
+═══════════════════════════════════════════════════════════════════════════════
+
+Topic: vehicle/motor/data
+
+Payload (JSON):
+{
+  "speed": 2500,        // RPM (0-3000 typical)
+  "current": 12.5,      // Amperes (0-20)
+  "voltage": 48.0,      // Volts (24-240)
+  "temperature": 65.5   // Celsius (0-120)
+}
+
+═══════════════════════════════════════════════════════════════════════════════
+🔧 CONFIGURATION
+═══════════════════════════════════════════════════════════════════════════════
+
+AWS IoT Endpoint:
+   • a2k4lnve2p8ceg-ats.iot.ap-south-1.amazonaws.com
+
+Server Port:
+   • Default: 3000
+   • Change: PORT=8080 npm start
+
+Data Update Interval:
+   • Real-time via Socket.IO (no polling)
+
+Chart Data Points:
+   • 40 points (configurable in index.html)
+
+═══════════════════════════════════════════════════════════════════════════════
+🚨 TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════════════════
+
+Problem: "npm: command not found"
+Solution: Install Node.js from https://nodejs.org/
+
+Problem: "Cannot find module" after npm install
+Solution: Run "npm install" again or delete node_modules and reinstall
+
+Problem: "Port 3000 in use"
+Solution: Use different port: PORT=8080 npm start
+
+Problem: "AWS connection fails"
+Solution: Verify certificate files exist and paths are correct in server.js
+
+Problem: Dashboard shows "OFFLINE"
+Solution: Check server is running (npm start). Check firewall allows port 3000
+
+Problem: "No data appearing on dashboard"
+Solution: Verify MQTT message is published to correct topic with correct format
+
+═══════════════════════════════════════════════════════════════════════════════
+📚 DOCUMENTATION FILES
+═══════════════════════════════════════════════════════════════════════════════
+
+Start Here:
+   → SETUP.md              Step-by-step setup guide
+   → IMPLEMENTATION.md     Quick reference overview
+
+For Details:
+   → README.md             Complete technical documentation
+   → NPM-COMMANDS.md       npm commands reference
+
+═══════════════════════════════════════════════════════════════════════════════
+✨ NPM COMMANDS
+═══════════════════════════════════════════════════════════════════════════════
+
+First time:
+   npm install             Install dependencies
+
+Running:
+   npm start               Run production server
+   npm run dev             Run with auto-restart (development)
+
+With custom port:
+   PORT=8080 npm start     Run on port 8080
+
+═══════════════════════════════════════════════════════════════════════════════
+🔒 SECURITY NOTES
+═══════════════════════════════════════════════════════════════════════════════
+
+✅ What's Protected:
+   • Certificates excluded from Git (.gitignore)
+   • TLS encryption (port 8883)
+   • Mutual certificate authentication
+
+⚠️  Important:
+   • Never commit private.key to Git
+   • Never share certificates publicly
+   • For production: Use environment variables
+   • For production: Enable CORS restrictions
+
+═══════════════════════════════════════════════════════════════════════════════
+📞 NEXT STEPS
+═══════════════════════════════════════════════════════════════════════════════
+
+1. ✅ Review this file (you're reading it!)
+2. → Run: npm install
+3. → Add AWS IoT certificates to root directory
+4. → Run: npm start
+5. → Open: http://localhost:3000
+6. → Publish MQTT test data
+7. → Watch dashboard update in real-time!
+
+═══════════════════════════════════════════════════════════════════════════════
+🎉 YOU'RE ALL SET!
+═══════════════════════════════════════════════════════════════════════════════
+
+Your motor dashboard backend is ready!
+
+For detailed setup instructions, see: SETUP.md
+For technical documentation, see: README.md
+For API reference, see: IMPLEMENTATION.md
+
+Questions? Check the documentation files!
+Happy monitoring! 🚀

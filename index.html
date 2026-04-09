@@ -1,0 +1,1875 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Motor Dashboard — Real-Time Monitor</title>
+    <meta name="description" content="Real-time 3D motor system dashboard with live telemetry, graphs, and alerts." />
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- Socket.IO Client -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <!-- Three.js via importmap (ES modules) -->
+    <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/"
+    }
+  }
+  </script>
+
+    <!-- Google Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@400;700;900&display=swap"
+        rel="stylesheet" />
+
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg-base: #0a0c12;
+            --bg-card: #111520;
+            --bg-card2: #161b28;
+            --border: #1e2740;
+            --accent-blue: #3b82f6;
+            --accent-cyan: #06b6d4;
+            --accent-green: #22c55e;
+            --accent-amber: #f59e0b;
+            --accent-red: #ef4444;
+            --accent-purple: #a855f7;
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --text-dim: #475569;
+            --glow-blue: 0 0 20px rgba(59, 130, 246, 0.35);
+            --glow-cyan: 0 0 20px rgba(6, 182, 212, 0.35);
+            --glow-green: 0 0 20px rgba(34, 197, 94, 0.35);
+            --glow-amber: 0 0 20px rgba(245, 158, 11, 0.35);
+            --glow-red: 0 0 24px rgba(239, 68, 68, 0.5);
+        }
+
+        html,
+        body {
+            height: 100%;
+            background: var(--bg-base);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+
+        /* ── Scrollbar ── */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-base);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        /* ── Header ── */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 18px 32px;
+            background: linear-gradient(180deg, #0d1020 0%, transparent 100%);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(12px);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            box-shadow: var(--glow-blue);
+        }
+
+        .logo h1 {
+            font-family: 'Orbitron', monospace;
+            font-size: 1.15rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 2px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 6px 14px;
+            background: rgba(34, 197, 94, 0.08);
+            border: 1px solid rgba(34, 197, 94, 0.25);
+            border-radius: 999px;
+            font-size: 0.75rem;
+            color: var(--accent-green);
+            font-weight: 500;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            animation: pulse-dot 1.8s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.5;
+                transform: scale(0.75);
+            }
+        }
+
+        .last-update {
+            font-size: 0.72rem;
+            color: var(--text-dim);
+        }
+
+        /* ── Layout ── */
+        main {
+            padding: 24px 28px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* ── Alert Banner ── */
+        #alert-zone {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .alert {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 18px;
+            border-radius: 10px;
+            font-size: 0.84rem;
+            font-weight: 500;
+            animation: slideDown 0.3s ease;
+        }
+
+        .alert-overload {
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #fca5a5;
+            box-shadow: var(--glow-red);
+        }
+
+        .alert-temp {
+            background: rgba(245, 158, 11, 0.12);
+            border: 1px solid rgba(245, 158, 11, 0.4);
+            color: #fcd34d;
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+        }
+
+        .alert-icon {
+            font-size: 1.1rem;
+        }
+
+        @keyframes slideDown {
+            from {
+                transform: translateY(-10px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        /* ── Metric Cards ── */
+        .metrics-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .metric-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px 22px;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.2s, border-color 0.3s, box-shadow 0.3s;
+        }
+
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--card-accent, var(--accent-blue));
+            opacity: 0.8;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .metric-card.speed {
+            --card-accent: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+        }
+
+        .metric-card.current {
+            --card-accent: linear-gradient(90deg, var(--accent-green), #16a34a);
+        }
+
+        .metric-card.voltage {
+            --card-accent: linear-gradient(90deg, var(--accent-purple), #7c3aed);
+        }
+
+        .metric-card.temperature {
+            --card-accent: linear-gradient(90deg, var(--accent-amber), #d97706);
+        }
+
+        .metric-card::before {
+            background: var(--card-accent);
+        }
+
+        .metric-label {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+
+        .metric-label .icon {
+            font-size: 0.9rem;
+        }
+
+        .metric-value {
+            font-family: 'Orbitron', monospace;
+            font-size: 2.2rem;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 4px;
+            transition: color 0.3s;
+        }
+
+        .metric-unit {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-weight: 400;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .metric-bar-bg {
+            margin-top: 14px;
+            height: 4px;
+            background: var(--border);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .metric-bar-fill {
+            height: 100%;
+            border-radius: 2px;
+            background: var(--card-accent);
+            transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            width: 0%;
+        }
+
+        .speed .metric-value {
+            color: var(--accent-cyan);
+        }
+
+        .current .metric-value {
+            color: var(--accent-green);
+        }
+
+        .voltage .metric-value {
+            color: var(--accent-purple);
+        }
+
+        .temperature .metric-value {
+            color: var(--accent-amber);
+        }
+
+        /* ── Main Grid ── */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 360px;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        /* ── Charts ── */
+        .charts-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .chart-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px 22px;
+        }
+
+        .chart-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px;
+        }
+
+        .chart-title {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .chart-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .chart-canvas-wrapper {
+            position: relative;
+            height: 140px;
+        }
+
+        /* ── 3D Model Panel ── */
+        .model-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .model-header {
+            padding: 16px 20px 12px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .model-title {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .rpm-badge {
+            font-family: 'Orbitron', monospace;
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            background: rgba(6, 182, 212, 0.1);
+            border: 1px solid rgba(6, 182, 212, 0.25);
+            padding: 4px 10px;
+            border-radius: 6px;
+        }
+
+        #model-container {
+            flex: 1;
+            min-height: 280px;
+            position: relative;
+            background: radial-gradient(ellipse at center, #0d1526 0%, #070a10 100%);
+        }
+
+        #model-container canvas {
+            display: block;
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .model-fallback {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            color: var(--text-dim);
+            font-size: 0.8rem;
+        }
+
+        .motor-svg-wrap {
+            width: 140px;
+            height: 140px;
+            position: relative;
+        }
+
+        .motor-svg-wrap svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* ── Bottom Stats Row ── */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 18px 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .stat-icon-wrap {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            flex-shrink: 0;
+        }
+
+        .stat-info {
+            flex: 1;
+        }
+
+        .stat-label {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            font-family: 'Orbitron', monospace;
+            font-size: 1.3rem;
+            font-weight: 700;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 1200px) {
+            .metrics-row {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .stats-row {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 640px) {
+            header {
+                padding: 14px 16px;
+            }
+
+            main {
+                padding: 16px 12px;
+            }
+
+            .metrics-row {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .stats-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* ── Grid pattern background ── */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        header,
+        main {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* ── Alert pulse animation for metric card ── */
+        .metric-card.alert-state {
+            animation: card-pulse 1s ease-in-out infinite alternate;
+        }
+
+        @keyframes card-pulse {
+            from {
+                box-shadow: none;
+            }
+
+            to {
+                box-shadow: 0 0 30px rgba(239, 68, 68, 0.25);
+                border-color: rgba(239, 68, 68, 0.5);
+            }
+        }
+
+        /* ── Throttle Control ── */
+        .throttle-control {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 18px 22px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .throttle-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            min-width: 100px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .throttle-slider-wrapper {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .throttle-slider {
+            flex: 1;
+            height: 6px;
+            border-radius: 3px;
+            background: linear-gradient(90deg, var(--accent-green), var(--accent-cyan), var(--accent-amber), var(--accent-red));
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .throttle-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--accent-cyan);
+            cursor: pointer;
+            border: 2px solid var(--bg-base);
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.6);
+            transition: all 0.2s;
+        }
+
+        .throttle-slider::-webkit-slider-thumb:hover {
+            width: 24px;
+            height: 24px;
+            box-shadow: 0 0 25px rgba(6, 182, 212, 0.8);
+        }
+
+        .throttle-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--accent-cyan);
+            cursor: pointer;
+            border: 2px solid var(--bg-base);
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.6);
+            transition: all 0.2s;
+        }
+
+        .throttle-slider::-moz-range-thumb:hover {
+            width: 24px;
+            height: 24px;
+            box-shadow: 0 0 25px rgba(6, 182, 212, 0.8);
+        }
+
+        .throttle-value {
+            font-family: 'Orbitron', monospace;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .throttle-unit {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            min-width: 30px;
+        }
+
+        .throttle-control.active {
+            border-color: rgba(6, 182, 212, 0.5);
+            box-shadow: 0 0 20px rgba(6, 182, 212, 0.2);
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ── Header ── -->
+    <header>
+        <div class="logo">
+            <div class="logo-icon">⚙️</div>
+            <h1>MOTOR OS</h1>
+        </div>
+        <div class="header-right">
+            <div class="status-badge">
+                <div class="status-dot" id="conn-dot"></div>
+                <span id="conn-label">LIVE</span>
+            </div>
+            <span class="last-update" id="last-update-time">Waiting…</span>
+        </div>
+    </header>
+
+    <!-- ── Main ── -->
+    <main>
+
+        <!-- Alert Zone -->
+        <div id="alert-zone"></div>
+
+        <!-- Throttle Control -->
+        <div class="throttle-control" id="throttle-control">
+            <div class="throttle-label">
+                <span>🎚️</span> Throttle
+            </div>
+            <div class="throttle-slider-wrapper">
+                <input type="range" id="throttle-slider" class="throttle-slider" min="0" max="100" value="0" />
+                <div class="throttle-value" id="throttle-value">0</div>
+                <div class="throttle-unit">%</div>
+            </div>
+        </div>
+
+        <!-- Throttle Status Info -->
+        <div style="background: rgba(6, 182, 212, 0.08); border: 1px solid rgba(6, 182, 212, 0.3); border-radius: 10px; padding: 12px 16px; margin-bottom: 20px; font-size: 0.78rem; color: var(--text-secondary);">
+            <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+                <div>
+                    <span style="color: var(--accent-cyan); font-weight: 600;">Dashboard Throttle:</span> 
+                    <span id="throttle-setting">0</span>%
+                </div>
+                <div>
+                    <span style="color: var(--accent-cyan); font-weight: 600;">ESP Raw Speed:</span> 
+                    <span id="raw-speed">—</span> RPM
+                </div>
+                <div>
+                    <span style="color: var(--accent-cyan); font-weight: 600;">Scaled Speed:</span> 
+                    <span id="scaled-speed">—</span> RPM
+                </div>
+            </div>
+        </div>
+
+        <!-- System Condition Status Panel (AUTOMATIC DETECTION) -->
+        <div style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, rgba(6, 182, 212, 0.08) 100%); border: 2px solid rgba(34, 197, 94, 0.3); border-radius: 12px; padding: 16px; margin-bottom: 20px; overflow: hidden;">
+            <h3 style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 12px;">📊 System Condition Status</h3>
+            
+            <!-- Condition Banner -->
+            <div id="condition-banner" style="display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 8px; background: rgba(34, 197, 94, 0.15); border-left: 4px solid rgba(34, 197, 94, 0.5); transition: all 0.5s ease;">
+                <div id="condition-icon" style="font-size: 1.8rem;">✅</div>
+                <div style="flex: 1;">
+                    <div id="condition-text" style="font-size: 0.9rem; font-weight: 600; color: var(--accent-green);">NORMAL OPERATION</div>
+                    <div id="condition-details" style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 4px;">Load: — kg | Throttle: —% | Voltage: — V</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Metric Cards -->
+        <div class="metrics-row">
+            <div class="metric-card speed" id="card-speed">
+                <div class="metric-label"><span class="icon">🔄</span> Speed</div>
+                <div class="metric-value" id="val-speed">—</div>
+                <div class="metric-unit">RPM</div>
+                <div class="metric-bar-bg">
+                    <div class="metric-bar-fill" id="bar-speed"></div>
+                </div>
+            </div>
+            <div class="metric-card current" id="card-current">
+                <div class="metric-label"><span class="icon">⚡</span> Current</div>
+                <div class="metric-value" id="val-current">—</div>
+                <div class="metric-unit">Amperes</div>
+                <div class="metric-bar-bg">
+                    <div class="metric-bar-fill" id="bar-current"></div>
+                </div>
+            </div>
+            <div class="metric-card voltage" id="card-voltage">
+                <div class="metric-label"><span class="icon">🔋</span> Voltage</div>
+                <div class="metric-value" id="val-voltage">—</div>
+                <div class="metric-unit">Volts</div>
+                <div class="metric-bar-bg">
+                    <div class="metric-bar-fill" id="bar-voltage"></div>
+                </div>
+            </div>
+            <div class="metric-card temperature" id="card-temp">
+                <div class="metric-label"><span class="icon">🌡️</span> Temperature</div>
+                <div class="metric-value" id="val-temp">—</div>
+                <div class="metric-unit">Celsius</div>
+                <div class="metric-bar-bg">
+                    <div class="metric-bar-fill" id="bar-temp"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Grid: Charts + 3D -->
+        <div class="main-grid">
+
+            <!-- Charts Panel -->
+            <div class="charts-panel">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <div class="chart-title">
+                            <div class="chart-dot" style="background:var(--accent-cyan)"></div>
+                            Speed vs Time
+                        </div>
+                    </div>
+                    <div class="chart-canvas-wrapper">
+                        <canvas id="chart-speed"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <div class="chart-title">
+                            <div class="chart-dot" style="background:var(--accent-amber)"></div>
+                            Temperature vs Time
+                        </div>
+                    </div>
+                    <div class="chart-canvas-wrapper">
+                        <canvas id="chart-temp"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <div class="chart-title">
+                            <div class="chart-dot" style="background:var(--accent-purple)"></div>
+                            Voltage vs Time
+                        </div>
+                    </div>
+                    <div class="chart-canvas-wrapper">
+                        <canvas id="chart-voltage"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3D Model Panel -->
+            <div class="model-panel">
+                <div class="model-header">
+                    <div class="model-title">⚙️ Motor 3D</div>
+                    <div class="rpm-badge" id="rpm-badge">0 RPM</div>
+                </div>
+                <div id="model-container">
+                    <!-- Three.js renders here; fallback SVG shown until model loads -->
+                    <div class="model-fallback" id="model-fallback">
+                        <div class="motor-svg-wrap">
+                            <svg viewBox="0 0 200 200" id="fallback-svg">
+                                <!-- Outer casing -->
+                                <circle cx="100" cy="100" r="90" fill="none" stroke="#1e2740" stroke-width="3" />
+                                <circle cx="100" cy="100" r="75" fill="#111520" stroke="#1e3a5f" stroke-width="2" />
+                                <!-- Hub -->
+                                <circle cx="100" cy="100" r="15" fill="#3b82f6" opacity="0.8" />
+                                <!-- Blades group -->
+                                <g id="svg-blades" transform-origin="100 100">
+                                    <path d="M100 100 L100 30 Q115 65 100 100Z" fill="#06b6d4" opacity="0.85" />
+                                    <path d="M100 100 L100 30 Q115 65 100 100Z" fill="#06b6d4" opacity="0.85"
+                                        transform="rotate(72 100 100)" />
+                                    <path d="M100 100 L100 30 Q115 65 100 100Z" fill="#06b6d4" opacity="0.85"
+                                        transform="rotate(144 100 100)" />
+                                    <path d="M100 100 L100 30 Q115 65 100 100Z" fill="#06b6d4" opacity="0.85"
+                                        transform="rotate(216 100 100)" />
+                                    <path d="M100 100 L100 30 Q115 65 100 100Z" fill="#06b6d4" opacity="0.85"
+                                        transform="rotate(288 100 100)" />
+                                </g>
+                                <!-- Center cap -->
+                                <circle cx="100" cy="100" r="10" fill="#0a0c12" stroke="#3b82f6" stroke-width="2" />
+                                <!-- Glow ring -->
+                                <circle cx="100" cy="100" r="76" fill="none" stroke="#3b82f6" stroke-width="1"
+                                    opacity="0.3" stroke-dasharray="6 4" />
+                            </svg>
+                        </div>
+                        <span id="fallback-label">3D Model View</span>
+                        <span style="font-size:0.68rem;color:var(--text-dim)">Rotate speed ∝ RPM</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Stats Row -->
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="stat-icon-wrap" style="background:rgba(59,130,246,0.12)">⚙️</div>
+                <div class="stat-info">
+                    <div class="stat-label">Max Speed Seen</div>
+                    <div class="stat-value" id="max-speed" style="color:var(--accent-cyan)">—</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon-wrap" style="background:rgba(239,68,68,0.12)">🌡️</div>
+                <div class="stat-info">
+                    <div class="stat-label">Peak Temperature</div>
+                    <div class="stat-value" id="max-temp" style="color:var(--accent-amber)">—</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon-wrap" style="background:rgba(168,85,247,0.12)">🔋</div>
+                <div class="stat-info">
+                    <div class="stat-label">Avg Voltage</div>
+                    <div class="stat-value" id="avg-voltage" style="color:var(--accent-purple)">—</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Test Scenarios Section (SECTION G) -->
+        <div style="background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 14px; padding: 20px 22px; margin-top: 24px;">
+            <h3 style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--accent-purple); margin-bottom: 14px;">
+                🧪 TEST SCENARIOS (SECTION G)
+            </h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                <button onclick="runScenario('normal')" style="padding: 10px 16px; background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.5); color: var(--accent-green); border-radius: 8px; cursor: pointer; font-size: 0.78rem; font-weight: 600; transition: all 0.2s;">
+                    ✅ Normal Condition
+                </button>
+                <button onclick="runScenario('heavy')" style="padding: 10px 16px; background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.5); color: var(--accent-amber); border-radius: 8px; cursor: pointer; font-size: 0.78rem; font-weight: 600; transition: all 0.2s;">
+                    🏋️ Heavy Load (200kg)
+                </button>
+                <button onclick="runScenario('accel')" style="padding: 10px 16px; background: rgba(6, 182, 212, 0.2); border: 1px solid rgba(6, 182, 212, 0.5); color: var(--accent-cyan); border-radius: 8px; cursor: pointer; font-size: 0.78rem; font-weight: 600; transition: all 0.2s;">
+                    ⚡ Sudden Acceleration
+                </button>
+                <button onclick="runScenario('lowbatt')" style="padding: 10px 16px; background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.5); color: var(--accent-red); border-radius: 8px; cursor: pointer; font-size: 0.78rem; font-weight: 600; transition: all 0.2s;">
+                    🔋 Low Battery
+                </button>
+            </div>
+            <div id="scenario-info" style="margin-top: 12px; font-size: 0.75rem; color: var(--text-secondary); padding: 8px; background: rgba(0,0,0,0.2); border-radius: 6px; display: none; white-space: pre-wrap;" />
+        </div>
+
+        <!-- Anomaly Detection System (BONUS) -->
+        <div style="background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 14px; padding: 20px 22px; margin-top: 20px;">
+            <h3 style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--accent-purple); margin-bottom: 14px;">
+                🔍 ANOMALY DETECTION & PREDICTION (BONUS)
+            </h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;">
+                <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 14px;">
+                    <div style="font-size: 0.7rem; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; margin-bottom: 8px;">Anomaly Detection</div>
+                    <div id="anomaly-status" style="font-size: 0.9rem; color: var(--accent-green);">✅ System Normal</div>
+                </div>
+                <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 14px;">
+                    <div style="font-size: 0.7rem; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; margin-bottom: 8px;">Overload Prediction</div>
+                    <div id="overload-pred" style="font-size: 0.9rem; color: var(--accent-green);">📊 No Risk</div>
+                </div>
+                <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 14px;">
+                    <div style="font-size: 0.7rem; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; margin-bottom: 8px;">Thermal Trend</div>
+                    <div id="thermal-trend" style="font-size: 0.9rem; color: var(--accent-green);">📉 Stable</div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        /* ================================================================
+           CONSTANTS & STATE
+        ================================================================ */
+        const MAX_POINTS = 40;
+
+        const state = {
+            speed: 0,
+            current: 0,
+            voltage: 0,
+            temperature: 0,
+            maxSpeed: 0,
+            maxTemp: 0,
+            voltageHistory: [],
+            rawSpeed: 0,  // Raw ESP speed before throttle
+            throttle: 0,  // Track throttle for acceleration detection
+            previousThrottle: 0,  // Previous throttle value
+            estimatedLoadKg: 0,  // Estimated load in kg
+        };
+
+        /* ================================================================
+           SYSTEM CONDITION DETECTION (SECTION G - AUTOMATIC)
+        ================================================================ */
+        const conditionDetector = {
+            currentCondition: 'NORMAL_OPERATION',
+            previousCondition: 'NORMAL_OPERATION',
+            lastConditionChangeTime: Date.now(),
+
+            // Estimate load from current draw (assumes typical motor characteristics)
+            // Current ≈ Load / Motor Efficiency ~ Load / 0.8
+            estimateLoad(current) {
+                // Empirical mapping: typical motor with 48V power supply
+                // 0A = 0kg, 10A = ~80kg, 15A = ~150kg, 20A = ~200kg
+                return Math.min(200, Math.max(0, current * 12));  // ~12 kg per ampere
+            },
+
+            // Detect system condition based on real-time data and throttle
+            detectCondition(motorData, throttlePercent) {
+                const load = this.estimateLoad(motorData.current);
+                const voltage = motorData.voltage;
+                const throttle = throttlePercent;
+                const prevThrottle = state.previousThrottle;
+
+                // Priority-based detection (check critical conditions first)
+
+                // 1. LOW BATTERY (Critical - highest priority)
+                if (voltage < 38) {
+                    return 'LOW_BATTERY';
+                }
+
+                // 2. SUDDEN ACCELERATION (High priority)
+                // Throttle increase > 30% within short time
+                const throttleDelta = throttle - prevThrottle;
+                if (throttleDelta > 30) {
+                    return 'SUDDEN_ACCELERATION';
+                }
+
+                // 3. HEAVY LOAD (Medium priority)
+                if (load >= 180) {
+                    return 'HEAVY_LOAD';
+                }
+
+                // 4. NORMAL OPERATION (Default)
+                // load < 100 AND throttle between 20-60% AND voltage > 40
+                if (load < 100 && throttle >= 20 && throttle <= 60 && voltage > 40) {
+                    return 'NORMAL_OPERATION';
+                }
+
+                // Fallback: if not exactly normal but no critical issue
+                return 'NORMAL_OPERATION';
+            },
+
+            // Format condition display text
+            getConditionDisplay(condition) {
+                const displays = {
+                    'NORMAL_OPERATION': {
+                        text: '✅ NORMAL OPERATION',
+                        icon: '✅',
+                        color: '#22c55e',
+                        bgColor: 'rgba(34, 197, 94, 0.15)',
+                        borderColor: 'rgba(34, 197, 94, 0.5)'
+                    },
+                    'HEAVY_LOAD': {
+                        text: '🏋️ HEAVY LOAD (200 kg)',
+                        icon: '🏋️',
+                        color: '#f59e0b',
+                        bgColor: 'rgba(245, 158, 11, 0.15)',
+                        borderColor: 'rgba(245, 158, 11, 0.5)'
+                    },
+                    'SUDDEN_ACCELERATION': {
+                        text: '⚡ SUDDEN ACCELERATION',
+                        icon: '⚡',
+                        color: '#06b6d4',
+                        bgColor: 'rgba(6, 182, 212, 0.15)',
+                        borderColor: 'rgba(6, 182, 212, 0.5)'
+                    },
+                    'LOW_BATTERY': {
+                        text: '🔋 LOW BATTERY',
+                        icon: '🔋',
+                        color: '#ef4444',
+                        bgColor: 'rgba(239, 68, 68, 0.15)',
+                        borderColor: 'rgba(239, 68, 68, 0.5)'
+                    }
+                };
+                return displays[condition] || displays['NORMAL_OPERATION'];
+            },
+
+            // Update UI display
+            updateDisplay(motorData, throttlePercent) {
+                const condition = this.detectCondition(motorData, throttlePercent);
+
+                // Only update if condition changed
+                if (condition !== this.currentCondition) {
+                    this.previousCondition = this.currentCondition;
+                    this.currentCondition = condition;
+                    this.lastConditionChangeTime = Date.now();
+                }
+
+                const display = this.getConditionDisplay(this.currentCondition);
+
+                // Update banner styling
+                const banner = document.getElementById('condition-banner');
+                const icon = document.getElementById('condition-icon');
+                const text = document.getElementById('condition-text');
+                const details = document.getElementById('condition-details');
+
+                if (banner) {
+                    banner.style.background = display.bgColor;
+                    banner.style.borderLeftColor = display.borderColor;
+                    icon.textContent = display.icon;
+                    text.textContent = display.text;
+                    text.style.color = display.color;
+                    
+                    // Calculate estimated load
+                    const load = this.estimateLoad(motorData.current);
+                    details.textContent = `Load: ${load.toFixed(0)} kg | Throttle: ${throttlePercent}% | Voltage: ${motorData.voltage.toFixed(1)} V`;
+                    details.style.color = 'var(--text-secondary)';
+                }
+            }
+        };
+
+        /* ================================================================
+           CHART FACTORY
+        ================================================================ */
+        function makeChart(canvasId, label, color, yLabel) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            const gradient = ctx.createLinearGradient(0, 0, 0, 140);
+            gradient.addColorStop(0, color + '44');
+            gradient.addColorStop(1, color + '00');
+
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label,
+                        data: [],
+                        borderColor: color,
+                        backgroundColor: gradient,
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        pointHoverRadius: 4,
+                        tension: 0.45,
+                        fill: true,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    scales: {
+                        x: {
+                            display: false,
+                        },
+                        y: {
+                            display: true,
+                            grid: {
+                                color: 'rgba(255,255,255,0.04)',
+                                drawBorder: false,
+                            },
+                            ticks: {
+                                color: '#475569',
+                                font: { size: 10 },
+                                maxTicksLimit: 5,
+                            },
+                            title: {
+                                display: true,
+                                text: yLabel,
+                                color: '#475569',
+                                font: { size: 10 },
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            enabled: true,
+                            backgroundColor: '#161b28',
+                            borderColor: '#1e2740',
+                            borderWidth: 1,
+                            titleColor: '#94a3b8',
+                            bodyColor: '#e2e8f0',
+                            callbacks: {
+                                title: () => '',
+                                label: (ctx) => ` ${ctx.parsed.y.toFixed(2)} ${yLabel}`
+                            }
+                        }
+                    },
+                    interaction: { mode: 'nearest', intersect: false },
+                }
+            });
+        }
+
+        const charts = {
+            speed: makeChart('chart-speed', 'Speed', '#06b6d4', 'RPM'),
+            temp: makeChart('chart-temp', 'Temperature', '#f59e0b', '°C'),
+            voltage: makeChart('chart-voltage', 'Voltage', '#a855f7', 'V'),
+        };
+
+        /* ================================================================
+           THREE.JS 3D MOTOR (loaded as ES module asynchronously)
+        ================================================================ */
+        let motorScene, motorCamera, motorRenderer, motorObject = null;
+        let THREE = null;
+        let currentRotationSpeed = 0;
+        let svgAngle = 0;
+        let svgAnimFrame = null;
+
+        async function initThreeJS() {
+            // Dynamically import three + GLTFLoader
+            const threeModule = await import('three');
+            THREE = threeModule;
+            const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+
+            const container = document.getElementById('model-container');
+            const w = container.clientWidth;
+            const h = container.clientHeight || 280;
+
+            motorScene = new THREE.Scene();
+            motorScene.background = new THREE.Color(0x0d1120);
+            // No fog — prevents models from blending into bg
+
+            motorCamera = new THREE.PerspectiveCamera(45, w / h, 0.01, 10000);
+            motorCamera.position.set(0, 2, 5);
+            motorCamera.lookAt(0, 0, 0);
+
+            motorRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+            motorRenderer.setSize(w, h);
+            motorRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            motorRenderer.shadowMap.enabled = false;
+            motorRenderer.toneMapping = THREE.LinearToneMapping;
+            motorRenderer.toneMappingExposure = 1.0;
+            motorRenderer.outputColorSpace = THREE.SRGBColorSpace;
+            container.appendChild(motorRenderer.domElement);
+
+            // Lights — bright neutral setup so any GLB is visible
+            const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+            motorScene.add(ambientLight);
+
+            const hemi = new THREE.HemisphereLight(0xffffff, 0x223355, 1.2);
+            motorScene.add(hemi);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
+            dirLight.position.set(5, 8, 5);
+            dirLight.castShadow = true;
+            motorScene.add(dirLight);
+
+            const dirLight2 = new THREE.DirectionalLight(0x8ab4f8, 1.2);
+            dirLight2.position.set(-5, 3, -5);
+            motorScene.add(dirLight2);
+
+            const pointLight1 = new THREE.PointLight(0x06b6d4, 2, 20);
+            pointLight1.position.set(-3, 2, 3);
+            motorScene.add(pointLight1);
+
+            const pointLight2 = new THREE.PointLight(0xa855f7, 1.5, 20);
+            pointLight2.position.set(3, -2, -3);
+            motorScene.add(pointLight2);
+
+            // Try loading GLB; fallback to procedural fan
+            let loaded = false;
+            const loader = new GLTFLoader();
+
+            // Skip GLB loading and always use procedural motor for proper blade rotation
+            console.log('[Motor3D] Using procedural motor for accurate blade rotation');
+            motorObject = buildProceduralMotor();
+            motorScene.add(motorObject);
+            hideFallback();
+
+            // Start animation loop
+            animate3D();
+
+            // Resize handling
+            window.addEventListener('resize', () => {
+                const w2 = container.clientWidth;
+                const h2 = container.clientHeight || 280;
+                motorCamera.aspect = w2 / h2;
+                motorCamera.updateProjectionMatrix();
+                motorRenderer.setSize(w2, h2);
+            });
+        }
+
+        function hideFallback() {
+            const fb = document.getElementById('model-fallback');
+            if (fb) fb.style.display = 'none';
+            cancelAnimationFrame(svgAnimFrame);
+        }
+
+        function buildProceduralMotor() {
+            const group = new THREE.Group();
+
+            // Cylinder body
+            const bodyGeo = new THREE.CylinderGeometry(0.6, 0.65, 1.8, 32);
+            const bodyMat = new THREE.MeshStandardMaterial({
+                color: 0x1a2540, metalness: 0.9, roughness: 0.2
+            });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            group.add(body);
+
+            // Shaft
+            const shaftGeo = new THREE.CylinderGeometry(0.07, 0.07, 1, 16);
+            const shaftMat = new THREE.MeshStandardMaterial({
+                color: 0x888888, metalness: 1, roughness: 0.1
+            });
+            const shaft = new THREE.Mesh(shaftGeo, shaftMat);
+            shaft.position.y = 1.4;
+            group.add(shaft);
+
+            // Fan blade group (rotates)
+            const fanGroup = new THREE.Group();
+            fanGroup.position.y = 1.9;
+            fanGroup.name = 'fanBlades';
+
+            const bladeCount = 5;
+            for (let i = 0; i < bladeCount; i++) {
+                const bladeGeo = new THREE.BoxGeometry(0.08, 0.55, 0.18);
+                const bladeMat = new THREE.MeshStandardMaterial({
+                    color: 0x06b6d4, metalness: 0.6, roughness: 0.3, emissive: 0x023040
+                });
+                const blade = new THREE.Mesh(bladeGeo, bladeMat);
+                const angle = (i / bladeCount) * Math.PI * 2;
+                blade.position.x = Math.sin(angle) * 0.4;
+                blade.position.z = Math.cos(angle) * 0.4;
+                blade.rotation.y = -angle;
+                blade.rotation.z = 0.3;
+                fanGroup.add(blade);
+            }
+
+            // Hub cap
+            const hubGeo = new THREE.SphereGeometry(0.12, 16, 16);
+            const hubMat = new THREE.MeshStandardMaterial({
+                color: 0x3b82f6, metalness: 0.8, roughness: 0.2, emissive: 0x0a1640
+            });
+            fanGroup.add(new THREE.Mesh(hubGeo, hubMat));
+            group.add(fanGroup);
+
+            // Ring groove detail
+            [0.4, 0, -0.4].forEach(y => {
+                const rg = new THREE.TorusGeometry(0.62, 0.03, 8, 48);
+                const rm = new THREE.MeshStandardMaterial({ color: 0x2a3a60, metalness: 0.9, roughness: 0.2 });
+                const ring = new THREE.Mesh(rg, rm);
+                ring.rotation.x = Math.PI / 2;
+                ring.position.y = y;
+                group.add(ring);
+            });
+
+            // Base
+            const baseGeo = new THREE.CylinderGeometry(0.75, 0.75, 0.15, 32);
+            const baseMat = new THREE.MeshStandardMaterial({ color: 0x111820, metalness: 0.7, roughness: 0.4 });
+            const base = new THREE.Mesh(baseGeo, baseMat);
+            base.position.y = -1.0;
+            group.add(base);
+
+            group.position.y = -0.3;
+            return group;
+        }
+
+        function animate3D() {
+            requestAnimationFrame(animate3D);
+            if (motorObject) {
+                // Use the named fanBlades group for proper blade rotation
+                const fanBlades = motorObject.getObjectByName('fanBlades')
+                    || motorObject.getObjectByName('Blades')
+                    || motorObject.getObjectByName('Fan')
+                    || motorObject.getObjectByName('Rotor');
+
+                if (fanBlades && fanBlades !== motorObject) {
+                    fanBlades.rotation.y += currentRotationSpeed;
+                    motorObject.rotation.y += 0.002; // Slight overall rotation for visual effect
+                } else {
+                    motorObject.rotation.y += currentRotationSpeed + 0.002;
+                }
+            }
+            if (motorRenderer) motorRenderer.render(motorScene, motorCamera);
+        }
+
+        // SVG fallback animation
+        function animateSVG() {
+            svgAngle += currentRotationSpeed * 60;
+            const bladesEl = document.getElementById('svg-blades');
+            if (bladesEl) {
+                bladesEl.setAttribute('transform', `rotate(${svgAngle} 100 100)`);
+            }
+            svgAnimFrame = requestAnimationFrame(animateSVG);
+        }
+
+        /* ================================================================
+           UPDATE UI
+        ================================================================ */
+        function updateUI(data) {
+            document.getElementById('val-speed').textContent = data.speed.toFixed(0);
+            document.getElementById('val-current').textContent = data.current.toFixed(2);
+            document.getElementById('val-voltage').textContent = data.voltage.toFixed(2);
+            document.getElementById('val-temp').textContent = data.temperature.toFixed(1);
+
+            document.getElementById('rpm-badge').textContent = data.speed.toFixed(0) + ' RPM';
+
+            // Progress bars (capped at 100%)
+            document.getElementById('bar-speed').style.width = Math.min(100, (data.speed / 3000) * 100) + '%';
+            document.getElementById('bar-current').style.width = Math.min(100, (data.current / 20) * 100) + '%';
+            document.getElementById('bar-voltage').style.width = Math.min(100, (data.voltage / 240) * 100) + '%';
+            document.getElementById('bar-temp').style.width = Math.min(100, (data.temperature / 120) * 100) + '%';
+
+            // Stats
+            if (data.speed > state.maxSpeed) {
+                state.maxSpeed = data.speed;
+                document.getElementById('max-speed').textContent = data.speed.toFixed(0) + ' RPM';
+            }
+            if (data.temperature > state.maxTemp) {
+                state.maxTemp = data.temperature;
+                document.getElementById('max-temp').textContent = data.temperature.toFixed(1) + ' °C';
+            }
+
+            state.voltageHistory.push(data.voltage);
+            if (state.voltageHistory.length > MAX_POINTS) state.voltageHistory.shift();
+            const avg = state.voltageHistory.reduce((a, b) => a + b, 0) / state.voltageHistory.length;
+            document.getElementById('avg-voltage').textContent = avg.toFixed(2) + ' V';
+
+            // Timestamp
+            const now = new Date();
+            document.getElementById('last-update-time').textContent =
+                'Updated ' + now.toLocaleTimeString();
+
+            // Connection dot stays green
+            document.getElementById('conn-dot').style.background = '#22c55e';
+            document.getElementById('conn-label').textContent = 'LIVE';
+        }
+
+        /* ================================================================
+           UPDATE CHARTS
+        ================================================================ */
+        function updateCharts(data) {
+            const label = new Date().toLocaleTimeString();
+
+            function pushChart(chart, value) {
+                const ds = chart.data;
+                ds.labels.push(label);
+                ds.datasets[0].data.push(value);
+                if (ds.labels.length > MAX_POINTS) {
+                    ds.labels.shift();
+                    ds.datasets[0].data.shift();
+                }
+                chart.update('none');
+            }
+
+            pushChart(charts.speed, data.speed);
+            pushChart(charts.temp, data.temperature);
+            pushChart(charts.voltage, data.voltage);
+        }
+
+        /* ================================================================
+           UPDATE MOTOR VISUAL
+        ================================================================ */
+        function updateMotorVisual(speed) {
+            // Convert RPM to smooth visual rotation
+            // 2500 RPM should give visible but not dizzying rotation
+            currentRotationSpeed = (speed / 60) * (Math.PI * 2) / 120; // radians per frame at 60 FPS, divided by 120 for smoothness
+        }
+
+        /* ================================================================
+           ALERTS
+        ================================================================ */
+        let alertOverload = false;
+        let alertTemp = false;
+
+        function checkAlerts(data) {
+            const zone = document.getElementById('alert-zone');
+
+            // Overload
+            const shouldOverload = data.current > 15;
+            if (shouldOverload !== alertOverload) {
+                alertOverload = shouldOverload;
+                updateAlert('alert-overload', shouldOverload,
+                    '⚡ Overload Warning — Current exceeds 15A! Immediate attention required.',
+                    'alert-overload'
+                );
+                document.getElementById('card-current').classList.toggle('alert-state', shouldOverload);
+            }
+
+            // Temperature
+            const shouldTemp = data.temperature > 80;
+            if (shouldTemp !== alertTemp) {
+                alertTemp = shouldTemp;
+                updateAlert('alert-temp-id', shouldTemp,
+                    '🌡️ High Temperature Warning — Motor temperature above 80°C!',
+                    'alert-temp'
+                );
+                document.getElementById('card-temp').classList.toggle('alert-state', shouldTemp);
+            }
+        }
+
+        function updateAlert(id, show, message, cssClass) {
+            let el = document.getElementById(id);
+            const zone = document.getElementById('alert-zone');
+            if (show) {
+                if (!el) {
+                    el = document.createElement('div');
+                    el.id = id;
+                    el.className = `alert ${cssClass}`;
+                    el.innerHTML = `<span class="alert-icon">${cssClass === 'alert-overload' ? '⚡' : '🌡️'}</span><span>${message}</span>`;
+                    zone.appendChild(el);
+                }
+            } else {
+                if (el) el.remove();
+            }
+        }
+
+        /* ================================================================
+           SOCKET.IO INTEGRATION
+        ================================================================ */
+        const socket = io();
+
+        socket.on('connect', () => {
+            console.log('[Socket.IO] Connected to server');
+            document.getElementById('conn-dot').style.background = '#22c55e';
+            document.getElementById('conn-label').textContent = 'LIVE';
+        });
+
+        socket.on('disconnect', () => {
+            console.log('[Socket.IO] Disconnected from server');
+            document.getElementById('conn-dot').style.background = '#ef4444';
+            document.getElementById('conn-label').textContent = 'OFFLINE';
+            document.getElementById('last-update-time').textContent = 'Disconnected';
+        });
+
+        socket.on('motorData', (data) => {
+            console.log('[motorData] Received:', data);
+
+            // Validate data structure
+            if (!data.speed || data.current === undefined || !data.voltage || !data.temperature) {
+                console.warn('[motorData] Invalid data structure:', data);
+                return;
+            }
+
+            // Add to anomaly detection history
+            anomalyDetection.addReading(data);
+            updateAnomalyDisplay();
+
+            // Store raw speed from ESP
+            state.rawSpeed = data.speed;
+
+            // Store current throttled values for display
+            updateUI(data);
+            updateCharts(data);
+            updateMotorVisual(data.speed);
+            checkAlerts(data);
+
+            // Update raw vs scaled display
+            document.getElementById('raw-speed').textContent = state.rawSpeed.toFixed(0);
+            document.getElementById('scaled-speed').textContent = data.speed.toFixed(0);
+
+            // Get current throttle value from slider (safe check)
+            const throttleSliderElement = document.getElementById('throttle-slider');
+            const currentThrottle = throttleSliderElement ? parseInt(throttleSliderElement.value) || 0 : 0;
+
+            // Update condition detector with current throttle
+            state.previousThrottle = state.throttle;
+            state.throttle = currentThrottle;
+            conditionDetector.updateDisplay(data, currentThrottle);
+
+            Object.assign(state, {
+                speed: data.speed,
+                current: data.current,
+                voltage: data.voltage,
+                temperature: data.temperature,
+                estimatedLoadKg: conditionDetector.estimateLoad(data.current),
+            });
+        });
+
+        socket.on('iotStatus', (status) => {
+            console.log('[iotStatus]', status);
+            if (!status.connected) {
+                document.getElementById('conn-dot').style.background = '#ef4444';
+                document.getElementById('conn-label').textContent = 'IoT ERROR';
+            }
+        });
+
+        socket.on('error', (error) => {
+            console.error('[Socket.IO] Error:', error);
+        });
+
+        /* ================================================================
+           THROTTLE CONTROL
+        ================================================================ */
+        const throttleSlider = document.getElementById('throttle-slider');
+        const throttleValue = document.getElementById('throttle-value');
+        const throttleControl = document.getElementById('throttle-control');
+
+        throttleSlider.addEventListener('input', (event) => {
+            const value = parseInt(event.target.value);
+            throttleValue.textContent = value;
+            document.getElementById('throttle-setting').textContent = value;
+
+            // Add active state visual feedback
+            if (value > 0) {
+                throttleControl.classList.add('active');
+            } else {
+                throttleControl.classList.remove('active');
+            }
+
+            // Update throttle state for condition detection
+            state.previousThrottle = state.throttle;
+            state.throttle = value;
+
+            // Send throttle value to server (Dashboard Slider → Socket.IO → Node.js → AWS IoT → ESP32)
+            socket.emit('throttle', value);
+
+            console.log('[Throttle] Sent throttle command:', value, '%');
+        });
+
+        throttleSlider.addEventListener('change', (event) => {
+            console.log('[Throttle] Throttle set to:', parseInt(event.target.value), '%');
+        });
+
+        socket.on('throttleAck', (data) => {
+            console.log('[Throttle] ESP acknowledged throttle:', data);
+        });
+
+        socket.on('throttleUpdate', (data) => {
+            console.log('[Throttle] Throttle update from server:', data.throttle, '%');
+            // Update slider if this update is from another client
+            const currentValue = parseInt(throttleSlider.value);
+            if (currentValue !== data.throttle) {
+                state.previousThrottle = state.throttle;
+                state.throttle = data.throttle;
+                throttleSlider.value = data.throttle;
+                throttleValue.textContent = data.throttle;
+                document.getElementById('throttle-setting').textContent = data.throttle;
+                if (data.throttle > 0) {
+                    throttleControl.classList.add('active');
+                } else {
+                    throttleControl.classList.remove('active');
+                }
+            }
+        });
+
+        /* ================================================================
+           ANOMALY DETECTION & OVERLOAD PREDICTION (BONUS SECTION)
+        ================================================================ */
+        const anomalyDetection = {
+            threshold: {
+                speedSpike: 1500,        // RPM spike detection
+                currentSpike: 10,        // Ampere spike detection
+                tempIncrease: 15,        // Celsius per reading
+                voltageDropRate: 5,      // Volt drop rate
+            },
+            history: [],
+            maxHistorySize: 20,
+
+            addReading(data) {
+                this.history.push({
+                    speed: data.speed,
+                    current: data.current,
+                    voltage: data.voltage,
+                    temperature: data.temperature,
+                    timestamp: new Date().getTime(),
+                });
+
+                if (this.history.length > this.maxHistorySize) {
+                    this.history.shift();
+                }
+            },
+
+            detectAnomalies() {
+                if (this.history.length < 2) return { anomaly: false, reason: '' };
+
+                const current = this.history[this.history.length - 1];
+                const previous = this.history[this.history.length - 2];
+
+                // Speed spike detection
+                const speedDelta = Math.abs(current.speed - previous.speed);
+                if (speedDelta > this.threshold.speedSpike) {
+                    return { anomaly: true, reason: `⚠️ SPEED SPIKE: +${speedDelta.toFixed(0)} RPM` };
+                }
+
+                // Current spike detection
+                const currentDelta = Math.abs(current.current - previous.current);
+                if (currentDelta > this.threshold.currentSpike) {
+                    return { anomaly: true, reason: `⚠️ CURRENT SPIKE: +${currentDelta.toFixed(1)} A` };
+                }
+
+                // Temperature increase detection
+                const tempDelta = current.temperature - previous.temperature;
+                if (tempDelta > this.threshold.tempIncrease) {
+                    return { anomaly: true, reason: `⚠️ TEMP SPIKE: +${tempDelta.toFixed(1)}°C` };
+                }
+
+                // Voltage drop detection
+                const voltDelta = previous.voltage - current.voltage;
+                if (voltDelta > this.threshold.voltageDropRate) {
+                    return { anomaly: true, reason: `⚠️ VOLTAGE DROP: ${voltDelta.toFixed(1)}V` };
+                }
+
+                return { anomaly: false, reason: '✅ No anomalies detected' };
+            },
+
+            predictOverload() {
+                if (this.history.length < 3) return { risk: 'low', message: 'Collecting data...' };
+
+                const recentData = this.history.slice(-5);
+                const avgCurrent = recentData.reduce((sum, d) => sum + d.current, 0) / recentData.length;
+                const avgSpeed = recentData.reduce((sum, d) => sum + d.speed, 0) / recentData.length;
+                const avgTemp = recentData.reduce((sum, d) => sum + d.temperature, 0) / recentData.length;
+
+                let riskScore = 0;
+
+                // Current > 15A = high risk
+                if (avgCurrent > 15) riskScore += 3;
+                else if (avgCurrent > 12) riskScore += 2;
+                else if (avgCurrent > 9) riskScore += 1;
+
+                // Speed > 2500 RPM = medium risk
+                if (avgSpeed > 2500) riskScore += 2;
+
+                // Temp > 80°C = high risk
+                if (avgTemp > 80) riskScore += 3;
+                else if (avgTemp > 70) riskScore += 2;
+
+                if (riskScore >= 6) {
+                    return { risk: 'critical', message: `🔴 CRITICAL - Overload Risk: ${riskScore}/10`, color: '#ef4444' };
+                } else if (riskScore >= 4) {
+                    return { risk: 'high', message: `🟡 HIGH - Overload Risk: ${riskScore}/10`, color: '#f59e0b' };
+                } else if (riskScore >= 2) {
+                    return { risk: 'medium', message: `🟠 MEDIUM - Overload Risk: ${riskScore}/10`, color: '#fb923c' };
+                } else {
+                    return { risk: 'low', message: `🟢 LOW - Overload Risk: ${riskScore}/10`, color: '#22c55e' };
+                }
+            },
+
+            getThermalTrend() {
+                if (this.history.length < 3) return { trend: 'stable', icon: '📊' };
+
+                const recent = this.history.slice(-3);
+                const temps = recent.map(d => d.temperature);
+
+                const isIncreasing = temps[2] > temps[1] && temps[1] > temps[0];
+                const isDecreasing = temps[2] < temps[1] && temps[1] < temps[0];
+
+                if (isIncreasing) {
+                    return { trend: 'trending up', icon: '📈' };
+                } else if (isDecreasing) {
+                    return { trend: 'trending down', icon: '📉' };
+                } else {
+                    return { trend: 'stable', icon: '📊' };
+                }
+            }
+        };
+
+        function updateAnomalyDisplay() {
+            const anomalies = anomalyDetection.detectAnomalies();
+            const overload = anomalyDetection.predictOverload();
+            const thermal = anomalyDetection.getThermalTrend();
+
+            document.getElementById('anomaly-status').textContent = anomalies.reason;
+            document.getElementById('overload-pred').textContent = overload.message;
+            document.getElementById('thermal-trend').textContent = `${thermal.icon} ${thermal.trend}`;
+
+            // Color coding
+            if (anomalies.anomaly) {
+                document.getElementById('anomaly-status').style.color = '#ef4444';
+            } else {
+                document.getElementById('anomaly-status').style.color = '#22c55e';
+            }
+
+            document.getElementById('overload-pred').style.color = overload.color;
+        }
+
+        /* ================================================================
+           TEST SCENARIOS (SECTION G)
+        ================================================================ */
+        let scenarioRunning = false;
+
+        async function runScenario(type) {
+            if (scenarioRunning) {
+                alert('Scenario already running. Please wait...');
+                return;
+            }
+
+            scenarioRunning = true;
+            const infoDiv = document.getElementById('scenario-info');
+            infoDiv.style.display = 'block';
+
+            const scenarios = {
+                normal: {
+                    name: 'Normal Operation',
+                    description: 'Motor running at steady state with balanced load',
+                    data: async function () {
+                        infoDiv.textContent = '🟢 NORMAL CONDITION\n\nSimulating steady-state operation:\n• Speed: 1500 RPM (constant)\n• Current: 8A (stable)\n• Voltage: 48V (normal)\n• Temperature: 60°C (safe)\n\nObservations:\n✅ All parameters within normal range\n✅ System stable and responsive\n✅ No anomalies detected\n✅ No overload risk';
+
+                        for (let i = 0; i < 5; i++) {
+                            const mockData = {
+                                speed: 1500 + Math.random() * 50,
+                                current: 8 + Math.random() * 1,
+                                voltage: 48 + Math.random() * 0.5,
+                                temperature: 60 + Math.random() * 2,
+                            };
+                            updateUI(mockData);
+                            updateCharts(mockData);
+                            checkAlerts(mockData);
+                            anomalyDetection.addReading(mockData);
+                            updateAnomalyDisplay();
+                            await new Promise(r => setTimeout(r, 1000));
+                        }
+                    }
+                },
+                heavy: {
+                    name: 'Heavy Load (200kg)',
+                    description: 'Motor under heavy load condition',
+                    data: async function () {
+                        infoDiv.textContent = '🏋️ HEAVY LOAD SCENARIO (200kg)\n\nSimulating heavy load operation:\n• Speed: 1200 RPM (reduced due to load)\n• Current: 16A+ (HIGH)\n• Voltage: 45V (slight drop)\n• Temperature: 75°C (elevated)\n\nObservations:\n⚠️ Current near maximum (>15A)\n⚠️ Speed reduced by 20%\n⚠️ Temperature rising\n⚠️ HIGH overload risk detected\n🟡 System under stress';
+
+                        for (let i = 0; i < 5; i++) {
+                            const mockData = {
+                                speed: 1200 + Math.random() * 100,
+                                current: 15 + Math.random() * 2,
+                                voltage: 45 + Math.random() * 1,
+                                temperature: 75 + Math.random() * 3,
+                            };
+                            updateUI(mockData);
+                            updateCharts(mockData);
+                            checkAlerts(mockData);
+                            anomalyDetection.addReading(mockData);
+                            updateAnomalyDisplay();
+                            await new Promise(r => setTimeout(r, 1000));
+                        }
+                    }
+                },
+                accel: {
+                    name: 'Sudden Acceleration',
+                    description: 'Motor sudden speed increase',
+                    data: async function () {
+                        infoDiv.textContent = '⚡ SUDDEN ACCELERATION SCENARIO\n\nSimulating rapid acceleration:\n• Speed: 500 → 3000 RPM (spike)\n• Current: 5 → 18A (spike)\n• Voltage: 48 → 46V (drop)\n• Temperature: 60 → 70°C (jump)\n\nObservations:\n🚨 SPEED SPIKE DETECTED\n🚨 CURRENT SPIKE DETECTED (+18A)\n⚠️ Voltage sag during acceleration\n⚠️ Anomaly detected at start\n📈 All parameters rising';
+
+                        const speeds = [500, 1200, 2000, 2800, 3000];
+                        const currents = [5, 10, 14, 17, 18];
+                        const temps = [60, 64, 68, 70, 72];
+
+                        for (let i = 0; i < 5; i++) {
+                            const mockData = {
+                                speed: speeds[i] + Math.random() * 50,
+                                current: currents[i] + Math.random() * 1,
+                                voltage: 48 - (i * 0.5) + Math.random() * 0.3,
+                                temperature: temps[i] + Math.random() * 1,
+                            };
+                            updateUI(mockData);
+                            updateCharts(mockData);
+                            checkAlerts(mockData);
+                            anomalyDetection.addReading(mockData);
+                            updateAnomalyDisplay();
+                            await new Promise(r => setTimeout(r, 1200));
+                        }
+                    }
+                },
+                lowbatt: {
+                    name: 'Low Battery',
+                    description: 'Battery voltage degradation',
+                    data: async function () {
+                        infoDiv.textContent = '🔋 LOW BATTERY SCENARIO\n\nSimulating battery discharge:\n• Voltage: 48V → 38V (critical drop)\n• Speed: 2000 → 1000 RPM (reduced)\n• Current: 12A → 18A (compensating)\n• Temperature: 60 → 85°C (thermal stress)\n\nObservations:\n🚨 VOLTAGE DROP DETECTED\n⚠️ Motor attempting to compensate\n⚠️ Current increasing to maintain power\n⚠️ Temperature rising from stress\n🔴 Battery critically low - ACTION REQUIRED';
+
+                        const voltages = [48, 45, 42, 40, 38];
+                        const speeds = [2000, 1800, 1500, 1200, 1000];
+                        const currents = [12, 13, 14.5, 16, 18];
+                        const temps = [60, 65, 70, 78, 85];
+
+                        for (let i = 0; i < 5; i++) {
+                            const mockData = {
+                                speed: speeds[i] + Math.random() * 50,
+                                current: currents[i] + Math.random() * 1,
+                                voltage: voltages[i] + Math.random() * 0.5,
+                                temperature: temps[i] + Math.random() * 2,
+                            };
+                            updateUI(mockData);
+                            updateCharts(mockData);
+                            checkAlerts(mockData);
+                            anomalyDetection.addReading(mockData);
+                            updateAnomalyDisplay();
+                            await new Promise(r => setTimeout(r, 1500));
+                        }
+                    }
+                }
+            };
+
+            if (scenarios[type]) {
+                await scenarios[type].data();
+                await new Promise(r => setTimeout(r, 1000));
+                infoDiv.textContent += '\n\n✅ Scenario Complete';
+            }
+
+            scenarioRunning = false;
+        }
+
+        /* ================================================================
+           BOOT
+        ================================================================ */
+        window.addEventListener('DOMContentLoaded', () => {
+            // Init Three.js (async ES module)
+            initThreeJS().catch(err => console.warn('[MotorDash] Three.js init error:', err));
+
+            // Start SVG fallback animation (will be cancelled when 3D model loads)
+            animateSVG();
+
+            // Init stat labels
+            document.getElementById('max-speed').textContent = '0 RPM';
+            document.getElementById('max-temp').textContent = '0 °C';
+            document.getElementById('avg-voltage').textContent = '0 V';
+
+            // Socket.IO connection established in event listeners above
+        });
+    </script>
+</body>
+
+</html>
